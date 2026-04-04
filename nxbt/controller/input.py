@@ -102,6 +102,10 @@ class InputParser():
         # that would close the "Change Grip/Order" menu
         self.exited_grip_order_menu = False
 
+        # Force one neutral report after a macro stops or finishes so
+        # the connection does not stay on the last active input frame.
+        self.needs_reset = False
+
     def buffer_macro(self, macro, macro_id):
 
         # Doesn't have any info
@@ -120,6 +124,7 @@ class InputParser():
             self.current_macro_commands = None
             self.macro_timer_length = 0
             self.macro_timer_start = 0
+            self.needs_reset = True
         else:
             # Check if the macro is still in the buffer
             for i in range(0, len(self.macro_buffer)):
@@ -144,6 +149,7 @@ class InputParser():
         self.macro_timer_length = 0
         self.macro_timer_start = 0
         self.macro_buffer = []
+        self.needs_reset = True
 
         return
 
@@ -193,14 +199,7 @@ class InputParser():
 
             # Check if we can load the next set of commands
             if not self.current_macro_commands and self.current_macro:
-                self.current_macro_commands = (
-                    self.current_macro.pop(0).strip(" ").split(" "))
-
-                # Timing metadata extraction
-                timer_length = self.current_macro_commands[-1]
-                timer_length = timer_length[0:len(timer_length)-1]
-                self.macro_timer_length = float(timer_length)
-                self.macro_timer_start = perf_counter()
+                self._load_next_macro_commands()
 
             self.set_macro_input(self.current_macro_commands)
 
@@ -210,9 +209,40 @@ class InputParser():
                 self.current_macro_commands = None
                 # Check if we're done the current macro
                 if not self.current_macro and state:
+                    self.needs_reset = True
                     finished = state["finished_macros"]
                     finished.append(self.current_macro_id)
                     state["finished_macros"] = finished
+        elif self.needs_reset:
+            self.set_idle_input()
+            self.needs_reset = False
+
+    def _load_next_macro_commands(self):
+        while self.current_macro and not self.current_macro_commands:
+            next_command = self.current_macro.pop(0)
+            if type(next_command) == dict and next_command["type"] == "LOOP":
+                if next_command["count"] == -1:
+                    # Requeue the body followed by the loop marker so the
+                    # block repeats until the macro is explicitly stopped.
+                    self.current_macro = (
+                        list(next_command["body"]) + [next_command] + self.current_macro)
+                continue
+
+            self.current_macro_commands = next_command.strip(" ").split(" ")
+
+            # Timing metadata extraction
+            timer_length = self.current_macro_commands[-1]
+            timer_length = timer_length[0:len(timer_length)-1]
+            self.macro_timer_length = float(timer_length)
+            self.macro_timer_start = perf_counter()
+            break
+
+    def set_idle_input(self):
+        self.protocol.set_button_inputs(0, 0, 0)
+        self.protocol.set_left_stick_inputs(
+            self.stick_ratio_to_calibrated_position(0, 0, "L_STICK"))
+        self.protocol.set_right_stick_inputs(
+            self.stick_ratio_to_calibrated_position(0, 0, "R_STICK"))
 
     def parse_controller_input(self, controller_input):
 
@@ -347,8 +377,15 @@ class InputParser():
                 # Recursively gather other loops if present
                 if any(s.startswith("LOOP") for s in loop_buffer):
                     loop_buffer = self.parse_loops(loop_buffer)
-                # Multiply out the loop and concatenate
-                parsed = parsed + (loop_buffer * loop_count)
+                if loop_count == -1:
+                    parsed.append({
+                        "type": "LOOP",
+                        "count": -1,
+                        "body": loop_buffer
+                    })
+                else:
+                    # Multiply out the loop and concatenate
+                    parsed = parsed + (loop_buffer * loop_count)
             else:
                 parsed.append(line)
             i += 1

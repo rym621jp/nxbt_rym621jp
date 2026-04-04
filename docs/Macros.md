@@ -79,6 +79,15 @@ LOOP 100
         0.1s
 ```
 
+`LOOP -1` can be used to repeat a block indefinitely until the macro is
+stopped or cleared.
+
+```
+LOOP -1
+    B 0.1s
+    0.1s
+```
+
 Note, a macro line starting with `#` is ignored.
 
 ## Macro Control Values
