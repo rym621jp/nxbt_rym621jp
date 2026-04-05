@@ -103,7 +103,23 @@ def handle_macro(message):
     message = json.loads(message)
     index = message[0]
     macro = message[1]
-    nxbt.macro(index, macro)
+    macro_id = nxbt.macro(index, macro, block=False)
+    emit('macro_started', {
+        "controller_index": index,
+        "macro_id": macro_id,
+    })
+
+
+@sio.on('stop_macro')
+def handle_stop_macro(message):
+    message = json.loads(message)
+    index = message[0]
+    macro_id = message[1]
+    nxbt.stop_macro(index, macro_id, block=False)
+    emit('macro_stopped', {
+        "controller_index": index,
+        "macro_id": macro_id,
+    })
 
 
 def start_web_app(ip='0.0.0.0', port=8000, usessl=False, cert_path=None):

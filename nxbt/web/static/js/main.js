@@ -6,6 +6,7 @@ let NXBT_CONTROLLER_INDEX = false;
 let CONTROLLER_INDEX = false;
 let CONTROLLER_CONNECTED = false;
 let STATE = false;
+let ACTIVE_MACRO_ID = false;
 
 // HTML SECTIONS
 let HTML_CONTROLLER_SELECTION = document.getElementById("controller-selection");
@@ -200,6 +201,12 @@ let stateInterval = setInterval(function() {
 
 socket.on('state', function(state) {
     STATE = state;
+    if (NXBT_CONTROLLER_INDEX !== false &&
+            state[NXBT_CONTROLLER_INDEX] &&
+            ACTIVE_MACRO_ID &&
+            state[NXBT_CONTROLLER_INDEX]["finished_macros"].indexOf(ACTIVE_MACRO_ID) > -1) {
+        ACTIVE_MACRO_ID = false;
+    }
 });
 
 socket.on('connect', function() {
@@ -214,6 +221,19 @@ socket.on('create_pro_controller', function(index) {
 
 socket.on('error', function(errorMessage) {
     displayError(errorMessage);
+});
+
+socket.on('macro_started', function(message) {
+    if (message["controller_index"] === NXBT_CONTROLLER_INDEX) {
+        ACTIVE_MACRO_ID = message["macro_id"];
+    }
+});
+
+socket.on('macro_stopped', function(message) {
+    if (message["controller_index"] === NXBT_CONTROLLER_INDEX &&
+            message["macro_id"] === ACTIVE_MACRO_ID) {
+        ACTIVE_MACRO_ID = false;
+    }
 });
 
 /**********************************************/
@@ -645,6 +665,13 @@ function eventLoop() {
 function sendMacro() {
     let macro = HTML_MACRO_TEXT.value.toUpperCase();
     socket.emit('macro', JSON.stringify([NXBT_CONTROLLER_INDEX, macro]));
+}
+
+function stopMacro() {
+    if (!ACTIVE_MACRO_ID) {
+        return;
+    }
+    socket.emit('stop_macro', JSON.stringify([NXBT_CONTROLLER_INDEX, ACTIVE_MACRO_ID]));
 }
 
 /**********************************************/

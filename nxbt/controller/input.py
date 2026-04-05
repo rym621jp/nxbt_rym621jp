@@ -106,6 +106,9 @@ class InputParser():
         # the connection does not stay on the last active input frame.
         self.needs_reset = False
 
+        # Holds macro inputs whose state was changed using UP/DOWN commands.
+        self.macro_state_inputs = []
+
     def buffer_macro(self, macro, macro_id):
 
         # Doesn't have any info
@@ -124,6 +127,7 @@ class InputParser():
             self.current_macro_commands = None
             self.macro_timer_length = 0
             self.macro_timer_start = 0
+            self.macro_state_inputs = []
             self.needs_reset = True
         else:
             # Check if the macro is still in the buffer
@@ -149,6 +153,7 @@ class InputParser():
         self.macro_timer_length = 0
         self.macro_timer_start = 0
         self.macro_buffer = []
+        self.macro_state_inputs = []
         self.needs_reset = True
 
         return
@@ -172,10 +177,13 @@ class InputParser():
         :rtype: bool
         """
         if (self.current_macro_commands is not None):
-            if len(self.current_macro_commands) < 2:
+            timer_length = self.current_macro_commands[-1]
+            if timer_length in ["UP", "DOWN"] or len(self.current_macro_commands) < 2:
                 return False
             else:
                 return True
+        elif self.macro_state_inputs:
+            return True
         elif dumps(self.controller_input) != dumps(DIRECT_INPUT_IDLE_PACKET):
             return True
         else:
@@ -209,6 +217,7 @@ class InputParser():
                 self.current_macro_commands = None
                 # Check if we're done the current macro
                 if not self.current_macro and state:
+                    self.macro_state_inputs = []
                     self.needs_reset = True
                     finished = state["finished_macros"]
                     finished.append(self.current_macro_id)
@@ -229,9 +238,15 @@ class InputParser():
                 continue
 
             self.current_macro_commands = next_command.strip(" ").split(" ")
+            timer_length = self.current_macro_commands[-1]
+
+            if timer_length in ["UP", "DOWN"]:
+                self._update_macro_input_state(
+                    self.current_macro_commands[:-1], timer_length)
+                self.current_macro_commands = None
+                continue
 
             # Timing metadata extraction
-            timer_length = self.current_macro_commands[-1]
             timer_length = timer_length[0:len(timer_length)-1]
             self.macro_timer_length = float(timer_length)
             self.macro_timer_start = perf_counter()
@@ -393,14 +408,28 @@ class InputParser():
         return parsed
 
     def set_macro_input(self, macro_input):
+        combined_inputs = list(self.macro_state_inputs)
 
-        # Checking if this is a wait macro command
-        if len(macro_input) < 2:
-            return
+        if macro_input is not None:
+            combined_inputs = combined_inputs + macro_input[:-1]
 
+        self._set_command_inputs(combined_inputs)
+
+    def _update_macro_input_state(self, macro_inputs, state):
+        if state == "DOWN":
+            for macro_input in macro_inputs:
+                if macro_input not in self.macro_state_inputs:
+                    self.macro_state_inputs.append(macro_input)
+        elif state == "UP":
+            self.macro_state_inputs = [
+                current_input for current_input in self.macro_state_inputs
+                if current_input not in macro_inputs
+            ]
+
+    def _set_command_inputs(self, macro_inputs):
         # Check if the Grip/Order menu would be closed
         if not self.exited_grip_order_menu and (
-                'A' in macro_input or 'B' in macro_input or 'HOME' in macro_input):
+                'A' in macro_inputs or 'B' in macro_inputs or 'HOME' in macro_inputs):
             self.exited_grip_order_menu = True
 
         # Arrays representing the 3 button bytes in the
@@ -411,8 +440,7 @@ class InputParser():
         # Analog stick byte placeholders
         stick_left = None
         stick_right = None
-        for i in range(0, len(macro_input)-1):
-            button = macro_input[i]
+        for button in macro_inputs:
             # Upper Byte
             if button == "Y":
                 upper[7] = '1'
@@ -477,8 +505,14 @@ class InputParser():
         self.protocol.set_button_inputs(upper_byte, shared_byte, lower_byte)
         if stick_left:
             self.protocol.set_left_stick_inputs(stick_left)
+        else:
+            self.protocol.set_left_stick_inputs(
+                self.stick_ratio_to_calibrated_position(0, 0, "L_STICK"))
         if stick_right:
             self.protocol.set_right_stick_inputs(stick_right)
+        else:
+            self.protocol.set_right_stick_inputs(
+                self.stick_ratio_to_calibrated_position(0, 0, "R_STICK"))
 
     def parse_macro_stick_position(self, stick_pos):
 

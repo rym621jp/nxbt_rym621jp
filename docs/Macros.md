@@ -57,6 +57,19 @@ L_STICK@+000+000 0.75s
 Remember, each X and Y value must be 3 digits. If you want to tilt the Right Thumbstick 75% to the left, you must write it as `R_STICK@-075+000`. Another thing to keep in mind, the sum of your X and Y can be more than 100. For example, `L_STICK@+100+100` is a 45° angle. 
 
 
+You can also use `DOWN` and `UP` in place of a time value to keep an
+input held across subsequent macro lines until it is released.
+
+```
+A DOWN
+0.5s
+A UP
+0.1s
+```
+
+The above keeps `A` held for the `0.5s` wait, then releases it and waits
+for `0.1s`.
+
 ### Loops
 
 A simple for-loop can be used to repeat a macro block a specified number of times. The below example loops through an indented macro block 100 times.

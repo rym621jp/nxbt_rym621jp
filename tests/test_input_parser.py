@@ -91,3 +91,32 @@ def test_macro_completion_sends_idle_input_on_next_tick():
 
     parser.set_protocol_input(state=state)
     assert protocol.button_inputs[-1] == (0, 0, 0)
+
+
+def test_down_up_macro_commands_hold_and_release_inputs():
+    protocol = DummyProtocol()
+    parser = InputParser(protocol)
+    parser.set_controller_input(deepcopy(DIRECT_INPUT_IDLE_PACKET))
+    state = {"finished_macros": []}
+
+    parser.buffer_macro(
+        "A DOWN\n"
+        "0.1s\n"
+        "A UP\n"
+        "0.1s",
+        macro_id="macro-3"
+    )
+
+    parser.set_protocol_input(state=state)
+    assert parser.macro_state_inputs == ["A"]
+    assert parser.current_macro_commands == ["0.1s"]
+    assert protocol.button_inputs[-1] != (0, 0, 0)
+
+    parser.macro_timer_start -= 1
+    parser.set_protocol_input(state=state)
+    assert parser.current_macro_commands is None
+
+    parser.set_protocol_input(state=state)
+    assert parser.macro_state_inputs == []
+    assert parser.current_macro_commands == ["0.1s"]
+    assert protocol.button_inputs[-1] == (0, 0, 0)
