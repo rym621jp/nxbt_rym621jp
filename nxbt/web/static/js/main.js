@@ -411,7 +411,7 @@ function shutdownController() {
 }
 
 function recreateProController() {
-    socket.emit('create_pro_controller');
+    socket.emit('web_create_pro_controller');
 }
 
 function restartController() {

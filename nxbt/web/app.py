@@ -61,11 +61,7 @@ def on_state():
 def on_disconnect():
     print("Disconnected")
     with user_info_lock:
-        try:
-            index = USER_INFO[request.sid]["controller_index"]
-            nxbt.remove_controller(index)
-        except KeyError:
-            pass
+        USER_INFO.pop(request.sid, None)
 
 
 @sio.on('shutdown')
